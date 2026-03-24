@@ -32,6 +32,21 @@ io.on("connection", (socket) => {
 
   io.emit("getOnlineUsers", Object.keys(userSocketMap));
 
+  // Typing indicator
+  socket.on("typing", ({ to }) => {
+    const receiverSocketId = userSocketMap[to];
+    if (receiverSocketId) {
+      io.to(receiverSocketId).emit("typing", { from: userId });
+    }
+  });
+
+  socket.on("stopTyping", ({ to }) => {
+    const receiverSocketId = userSocketMap[to];
+    if (receiverSocketId) {
+      io.to(receiverSocketId).emit("stopTyping", { from: userId });
+    }
+  });
+
   socket.on("disconnect", () => {
     console.log("User disconnected:", userId);
     delete userSocketMap[userId];
@@ -41,7 +56,7 @@ io.on("connection", (socket) => {
 
 /* ---------------- MIDDLEWARE ---------------- */
 app.use(cors());
-app.use(express.json({ limit: "4mb" }));
+app.use(express.json({ limit: "50mb" }));
 
 /* ---------------- TEST ROUTE ---------------- */
 app.get("/api/status", (req, res) => {
@@ -53,7 +68,7 @@ app.use("/api/auth", userRouter);
 app.use("/api/messages", messageRouter);
 
 /* ---------------- DATABASE ---------------- */
-connectDB();
+await connectDB();
 
 /* ---------------- START SERVER (RENDER NEEDS THIS) ---------------- */
 const PORT = process.env.PORT || 5000;

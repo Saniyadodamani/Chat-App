@@ -1,7 +1,6 @@
 import User from '../models/User.js';
 import bcrypt from 'bcryptjs';
 import { generateToken } from '../lib/utils.js';
-import cloudinary from '../lib/cloudinary.js';
 
 
 
@@ -81,8 +80,8 @@ export const updateProfilePic=async(req,res)=>{
             updateUser=await User.findByIdAndUpdate(userId,{bio,fullName},
             {new:true});
         }else{
-            const upload= await cloudinary.uploader.upload(profilePic);
-            updateUser=await User.findByIdAndUpdate(userId,{profilePic:upload.secure_url,bio,fullName},
+            // Store profile pic as base64 directly (no Cloudinary needed)
+            updateUser=await User.findByIdAndUpdate(userId,{profilePic, bio, fullName},
             {new:true});
         }
         const safeUser = updateUser.toObject();

@@ -1,4 +1,3 @@
-import cloudinary from '../lib/cloudinary.js';
 import Message from '../models/Message.js';
 import User from '../models/User.js';
 import {io, userSocketMap} from "../server.js";
@@ -10,7 +9,7 @@ export const getUserForSidebar=async(req,res)=>{
 
         const unseenMessages={}
         const promises=filteredUsers.map(async(user)=>{
-            const messages = await Message.find({senderId:user._id,receiverId:userId,seen:false});
+            const messages = await Message.find({senderId:user._id,receiverId:userId,seen:false, deleted:false});
             if(messages.length>0){
                 unseenMessages[user._id]=messages.length;
             }
@@ -34,12 +33,17 @@ export const getMessages=async(req,res)=>{
             $or:[
                 {senderId:myId, receiverId: selectedUserId},
                 {senderId: selectedUserId, receiverId: myId},
-
-            ]
-
+            ],
+            deleted: false
         });
-        await Message.updateMany({senderId: selectedUserId, receiverId: myId},
+        await Message.updateMany({senderId: selectedUserId, receiverId: myId, seen: false},
             {seen:true});
+
+        // Emit messageSeen event to sender so their UI updates read receipts
+        const senderSocketId = userSocketMap[selectedUserId];
+        if(senderSocketId){
+            io.to(senderSocketId).emit("messageSeen", { by: String(myId) });
+        }
 
         res.json({success: true, messages});
 
@@ -54,8 +58,17 @@ export const getMessages=async(req,res)=>{
         try{
             const {id}=req.params;
             await Message.findByIdAndUpdate(id, {seen:true});
-            res.json({success:true});
 
+            // Get the message to emit event to sender
+            const message = await Message.findById(id);
+            if(message){
+                const senderSocketId = userSocketMap[String(message.senderId)];
+                if(senderSocketId){
+                    io.to(senderSocketId).emit("messageSeen", { by: String(message.receiverId) });
+                }
+            }
+
+            res.json({success:true});
 
         } catch(error){
             console.log(error.message);
@@ -65,30 +78,23 @@ export const getMessages=async(req,res)=>{
 
     export const sendMessage= async(req, res)=>{
         try{
-            const {text,image}=req.body;
+            const {text, image, voice}=req.body;
             const receiverId=req.params.id;
             const senderId=req.user._id;
 
-            let imageUrl;
-            if(image){
-                const uploadResponse=await cloudinary.uploader.upload(image);
-                imageUrl=uploadResponse.secure_url;
-            }
-
+            // Store images and voice as base64 directly (no Cloudinary needed)
             const newMessage= await Message.create({
                 senderId,
                 receiverId,
                 text,
-                image:imageUrl
+                image: image || null,
+                voice: voice || null
             });
              
             const receiverSocketId= userSocketMap[receiverId];
             if(receiverSocketId){
                 io.to(receiverSocketId).emit("newMessage", newMessage)
-
             }
-
-
 
             res.json({success:true, message:newMessage});
         } catch(error){
@@ -97,5 +103,36 @@ export const getMessages=async(req,res)=>{
         }
     }
 
+    export const deleteMessage = async(req, res) => {
+        try {
+            const {id} = req.params;
+            const userId = req.user._id;
 
+            const message = await Message.findById(id);
+            if(!message){
+                return res.json({success: false, message: "Message not found"});
+            }
 
+            // Only sender can delete their own message
+            if(String(message.senderId) !== String(userId)){
+                return res.json({success: false, message: "Not authorized"});
+            }
+
+            message.deleted = true;
+            message.text = "";
+            message.image = "";
+            message.voice = "";
+            await message.save();
+
+            // Notify receiver about deleted message
+            const receiverSocketId = userSocketMap[String(message.receiverId)];
+            if(receiverSocketId){
+                io.to(receiverSocketId).emit("messageDeleted", { messageId: id });
+            }
+
+            res.json({success: true, messageId: id});
+        } catch(error){
+            console.log(error.message);
+            res.json({success: false, message: error.message});
+        }
+    }

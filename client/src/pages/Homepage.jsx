@@ -5,7 +5,7 @@ import Rightsidebar from "../components/Rightsidebar"
 import { ChatContext } from '../../context/ChatContext'
 
 const Homepage = () => {
-  const { selectedUser } = useContext(ChatContext)
+  const { selectedUser, showRightPanel } = useContext(ChatContext)
 
   return (
     <div className='border w-full h-screen sm:px-[15%] sm:py-[5%]'>
@@ -17,14 +17,16 @@ const Homepage = () => {
       overflow-hidden
       h-[100%]
       grid grid-cols-1 relative
-      ${selectedUser
+      ${selectedUser && showRightPanel
         ? 'md:grid-cols-[1fr_1.5fr_1fr] xl:grid-cols-[1fr_2fr_1fr]'
+        : selectedUser
+        ? 'md:grid-cols-[1fr_2fr]'
         : 'md:grid-cols-2'}
     `}
   >
         <Sidebar />
         <Chatcontainer/>
-        <Rightsidebar />
+        {selectedUser && showRightPanel && <Rightsidebar />}
       </div>
     </div>
   );
